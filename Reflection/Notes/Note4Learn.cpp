@@ -35,7 +35,7 @@ GENERATED_BODY() ， 生成的反射代码通过宏引入到引擎和项目中
 下面一个个分析分别干了些什么东东
 
 举个例子，展开 FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_13_SPARSE_DATA 宏
-目前只看到是个空宏，不知道用来干嘛      @TODO
+目前只看到是个空宏，不知道用来干嘛      // @TODO
 
 举个例子，展开 FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_13_RPC_WRAPPERS_NO_PURE_DECLS 宏
 {
@@ -46,7 +46,7 @@ GENERATED_BODY() ， 生成的反射代码通过宏引入到引擎和项目中
 }
 
 举个例子，展开 FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_13_CALLBACK_WRAPPERS 宏
-目前只看到是个空宏，不知道用来干嘛      @TODO
+目前只看到是个空宏，不知道用来干嘛      // @TODO
 
 举个例子，展开 FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_13_INCLASS_NO_PURE_DECLS 宏
 {
@@ -100,6 +100,295 @@ GENERATED_BODY() ， 生成的反射代码通过宏引入到引擎和项目中
 }
 其实就是定义上面用 DECLARE_FUNCTION 声明过的静态方法。
 结合 DECLARE_FUNCTION 和 DEFINE_FUNCTION 2个来看，其实主要就是生成个 thunk 方法。但为什么要生成个 thunk 方法呢，首先看方法的逻辑是给蓝图VM调用的，就是我们cpp的接口 TestUFuncBpCallable 通过 execTestUFuncBpCallable 来调，另一方面，如果单从要实现反射层面来思考，我们cpp接口 TestUFuncBpCallable 要注册，但又不是直接注册 TestUFuncBpCallable ，而是套多一层 execTestUFuncBpCallable 静态方法。所以目前个人认为，生成个 thunk 方法，套多一层巧妙同时解决了2个问题。
+
+解析 static void StaticRegisterNativesATestActor(); 方法
+举个例子，
+void ATestActor::StaticRegisterNativesATestActor()
+{
+    UClass* Class = ATestActor::StaticClass();
+    static const FNameNativePtrPair Funcs[] = {
+        { "TestUFuncBpCallable", &ATestActor::execTestUFuncBpCallable },
+        { "TestUFuncBpNative", &ATestActor::execTestUFuncBpNative },
+        { "TestUFuncOnly", &ATestActor::execTestUFuncOnly },
+    };
+    FNativeFunctionRegistrar::RegisterFunctions(Class, Funcs, UE_ARRAY_COUNT(Funcs));
+}
+给 ATestActor 声明了个静态方法，该方法主要就是注册一些在 FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_13_RPC_WRAPPERS_NO_PURE_DECLS 宏里声明的方法，注册在 UClass 里的 NativeFunctionLookupTable 属性，是个 TArray 类型。
+NativeFunctionLookupTable   // @TODO 该属性的引用大概是什么情况
+
+解析 friend struct Z_Construct_UClass_ATestActor_Statics;
+其实就是 ATestActor类 friend 了叫 Z_Construct_UClass_ATestActor_Statics 的结构。
+主要还是要看 Z_Construct_UClass_ATestActor_Statics 结构里有什么东西，目前看应该都是用于构造 ATestActor 类的 UClass 的信息。    // @TODO 分析 结构里主要的属性
+struct Z_Construct_UClass_ATestActor_Statics
+{
+    static UObject* (*const DependentSingletons[])();
+    static const FClassFunctionLinkInfo FuncInfo[];
+    static const UECodeGen_Private::FObjectPropertyParams NewProp_TestComp;
+    static const UECodeGen_Private::FObjectPropertyParams NewProp_TestCompBp;
+    static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
+    static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
+    static const UECodeGen_Private::FClassParams ClassParams;
+};
+
+解析 DECLARE_CLASS
+原型：
+#define DECLARE_CLASS( TClass, TSuperClass, TStaticFlags, TStaticCastFlags, TPackage, TRequiredAPI  ) \
+private: \
+    TClass& operator=(TClass&&);   \
+    TClass& operator=(const TClass&);   \
+	TRequiredAPI static UClass* GetPrivateStaticClass(); \
+public: \
+	/** Bitwise union of #EClassFlags pertaining to this class.*/ \
+	enum {StaticClassFlags=TStaticFlags}; \
+	/** Typedef for the base class ({{ typedef-type }}) */ \
+	typedef TSuperClass Super;\
+	/** Typedef for {{ typedef-type }}. */ \
+	typedef TClass ThisClass;\
+	/** Returns a UClass object representing this class at runtime */ \
+	inline static UClass* StaticClass() \
+	{ \
+		return GetPrivateStaticClass(); \
+	} \
+	/** Returns the package this class belongs in */ \
+	inline static const TCHAR* StaticPackage() \
+	{ \
+		return TPackage; \
+	} \
+	/** Returns the static cast flags for this class */ \
+	inline static EClassCastFlags StaticClassCastFlags() \
+	{ \
+		return TStaticCastFlags; \
+	} \
+	/** For internal use only; use StaticConstructObject() to create new objects. */ \
+	inline void* operator new(const size_t InSize, EInternal InInternalOnly, UObject* InOuter = (UObject*)GetTransientPackage(), FName InName = NAME_None, EObjectFlags InSetFlags = RF_NoFlags) \
+	{ \
+		return StaticAllocateObject(StaticClass(), InOuter, InName, InSetFlags); \
+	} \
+	/** For internal use only; use StaticConstructObject() to create new objects. */ \
+	inline void* operator new( const size_t InSize, EInternal* InMem ) \
+	{ \
+		return (void*)InMem; \
+	} \
+	/* Eliminate V1062 warning from PVS-Studio while keeping MSVC and Clang happy. */ \
+	inline void operator delete(void* InMem) \
+	{ \
+		::operator delete(InMem); \
+	}
+举个例子，展开 DECLARE_CLASS(ATestActor, AActor, COMPILED_IN_FLAGS(0 | CLASS_Config), CASTCLASS_None, TEXT("/Script/ReflectionPlugin"), NO_API)
+{
+    private:
+        // 禁止移动赋值
+        ATestActor& operator=(ATestActor&&);
+        // 禁止拷贝赋值
+        ATestActor& operator=(const ATestActor&);
+        // 核心方法，用来构造这个类的 UClass 的
+        NO_API static UClass* GetPrivateStaticClass();
+    public:
+        /** Bitwise union of #EClassFlags pertaining to this class.*/
+        enum {StaticClassFlags=COMPILED_IN_FLAGS(0 | CLASS_Config)};
+        /** Typedef for the base class ({{ typedef-type }}) */
+        typedef AActor Super;
+        /** Typedef for {{ typedef-type }}. */
+        typedef ATestActor ThisClass;
+        /** Returns a UClass object representing this class at runtime */
+        inline static UClass* StaticClass()
+        {
+            return GetPrivateStaticClass();
+        }
+        /** Returns the package this class belongs in */
+        inline static const TCHAR* StaticPackage()
+        {
+            return TEXT("/Script/ReflectionPlugin");
+        }
+        /** Returns the static cast flags for this class */
+        inline static EClassCastFlags StaticClassCastFlags()
+        {
+            return CASTCLASS_None;
+        }
+        /** For internal use only; use StaticConstructObject() to create new objects. */
+        inline void* operator new(const size_t InSize, EInternal InInternalOnly, UObject* InOuter = (UObject*)GetTransientPackage(), FName InName = NAME_None, EObjectFlags InSetFlags = RF_NoFlags)
+        {
+            return StaticAllocateObject(StaticClass(), InOuter, InName, InSetFlags);
+        }
+        /** For internal use only; use StaticConstructObject() to create new objects. */
+        inline void* operator new( const size_t InSize, EInternal* InMem )
+        {
+            return (void*)InMem;
+        }
+        /* Eliminate V1062 warning from PVS-Studio while keeping MSVC and Clang happy. */
+        inline void operator delete(void* InMem)
+        {
+            ::operator delete(InMem);
+        }
+}
+展开后可以看出像个模板一样，就是如果我们的类基于 UE 的 UObject 和 放射系统下，就必需按一定规则声明这个类，而 DECLARE_CLASS 就是这个规则，主要关注里面的 UClass ， Package ， new ， delete 。
+
+解析 DECLARE_SERIALIZER
+原型：
+#define DECLARE_SERIALIZER( TClass ) \
+	friend FArchive &operator<<( FArchive& Ar, TClass*& Res ) \
+	{ \
+		return Ar << (UObject*&)Res; \
+	} \
+	friend void operator<<(FStructuredArchive::FSlot InSlot, TClass*& Res) \
+	{ \
+		InSlot << (UObject*&)Res; \
+	}
+应该跟序列化有关        // @TODO 之后分析
+
+解析 StaticClass ， GetPrivateStaticClass
+这部分主要跟 UClass 有关。
+通过上面解析 DECLARE_CLASS ，可以知道 StaticClass 和 GetPrivateStaticClass 都是在通过 DECLARE_CLASS 宏声明的。 StaticClass 是个类里的静态方法， 一般类似 ATestActor::StaticClass() 这样使用就可以获得 ATestActor类的 UClass ， GetPrivateStaticClass 也是类里的静态方法，只是在 private 下而已。 StaticClass 方法里归根到底还是调 GetPrivateStaticClass 来构造 UClass 的。
+那么下一步就要看看 GetPrivateStaticClass 的定义了。
+// Implement the GetPrivateStaticClass and the registration info but do not auto register the class.  
+// This is primarily used by UnrealHeaderTool
+#define IMPLEMENT_CLASS_NO_AUTO_REGISTRATION(TClass) \
+	FClassRegistrationInfo Z_Registration_Info_UClass_##TClass; \
+	UClass* TClass::GetPrivateStaticClass() \
+	{ \
+		if (!Z_Registration_Info_UClass_##TClass.InnerSingleton) \
+		{ \
+			/* this could be handled with templates, but we want it external to avoid code bloat */ \
+			GetPrivateStaticClassBody( \
+				StaticPackage(), \
+				(TCHAR*)TEXT(#TClass) + 1 + ((StaticClassFlags & CLASS_Deprecated) ? 11 : 0), \
+				Z_Registration_Info_UClass_##TClass.InnerSingleton, \
+				StaticRegisterNatives##TClass, \
+				sizeof(TClass), \
+				alignof(TClass), \
+				(EClassFlags)TClass::StaticClassFlags, \
+				TClass::StaticClassCastFlags(), \
+				TClass::StaticConfigName(), \
+				(UClass::ClassConstructorType)InternalConstructor<TClass>, \
+				(UClass::ClassVTableHelperCtorCallerType)InternalVTableHelperCtorCaller<TClass>, \
+				&TClass::AddReferencedObjects, \
+				&TClass::Super::StaticClass, \
+				&TClass::WithinClass::StaticClass \
+			); \
+		} \
+		return Z_Registration_Info_UClass_##TClass.InnerSingleton; \
+	}
+由上面可见， GetPrivateStaticClass 的定义也是通过宏的。
+举个例子，
+IMPLEMENT_CLASS_NO_AUTO_REGISTRATION(ATestActor); 具体是写在 TestActor.gen.cpp 文件下的，由 UHT 生成。
+展开如下：
+{
+    FClassRegistrationInfo Z_Registration_Info_UClass_ATestActor;
+	UClass* ATestActor::GetPrivateStaticClass()
+	{
+		if (!Z_Registration_Info_UClass_ATestActor.InnerSingleton)
+		{
+			/* this could be handled with templates, but we want it external to avoid code bloat */
+			GetPrivateStaticClassBody(
+				StaticPackage(),
+				(TCHAR*)TEXT("ATestActor") + 1 + ((StaticClassFlags & CLASS_Deprecated) ? 11 : 0),
+				Z_Registration_Info_UClass_ATestActor.InnerSingleton,
+				StaticRegisterNativesATestActor,
+				sizeof(ATestActor),
+				alignof(ATestActor),
+				(EClassFlags)ATestActor::StaticClassFlags,
+				ATestActor::StaticClassCastFlags(),
+				ATestActor::StaticConfigName(),
+				(UClass::ClassConstructorType)InternalConstructor<ATestActor>,
+				(UClass::ClassVTableHelperCtorCallerType)InternalVTableHelperCtorCaller<ATestActor>,
+				&ATestActor::AddReferencedObjects,
+				&ATestActor::Super::StaticClass,
+				&ATestActor::WithinClass::StaticClass
+			);
+		}
+		return Z_Registration_Info_UClass_ATestActor.InnerSingleton;
+	}
+}
+
+/**
+ * Registration information for classes
+ */
+using FClassRegistrationInfo = TRegistrationInfo<UClass, FClassReloadVersionInfo>;
+/**
+ * Structure that represents the registration information for a given class, structure, or enumeration
+ */
+template <typename T, typename V>
+struct TRegistrationInfo
+{
+	using TType = T;
+	using TVersion = V;
+
+	TType* InnerSingleton = nullptr;
+	TType* OuterSingleton = nullptr;
+	TVersion ReloadVersionInfo;
+};
+/**
+ * Reload version information for classes
+ */
+struct FClassReloadVersionInfo
+{
+#if WITH_RELOAD
+	SIZE_T Size = 0;
+	uint32 Hash = 0;
+#endif
+};
+理解为：
+struct FClassRegistrationInfo = {
+	UClass* InnerSingleton = nullptr;
+	UClass* OuterSingleton = nullptr;
+	FClassReloadVersionInfo ReloadVersionInfo;
+}
+
+
+
+void GetPrivateStaticClassBody(
+	const TCHAR* PackageName,
+	const TCHAR* Name,
+	UClass*& ReturnClass,
+	void(*RegisterNativeFunc)(),
+	uint32 InSize,
+	uint32 InAlignment,
+	EClassFlags InClassFlags,
+	EClassCastFlags InClassCastFlags,
+	const TCHAR* InConfigName,
+	UClass::ClassConstructorType InClassConstructor,
+	UClass::ClassVTableHelperCtorCallerType InClassVTableHelperCtorCaller,
+	UClass::ClassAddReferencedObjectsType InClassAddReferencedObjects,
+	UClass::StaticClassFunctionType InSuperClassFn,
+	UClass::StaticClassFunctionType InWithinClassFn
+	)
+{
+	ReturnClass = (UClass*)GUObjectAllocator.AllocateUObject(sizeof(UClass), alignof(UClass), true);
+	ReturnClass = ::new (ReturnClass)
+		UClass
+		(
+		EC_StaticConstructor,
+		Name,
+		InSize,
+		InAlignment,
+		InClassFlags,
+		InClassCastFlags,
+		InConfigName,
+		EObjectFlags(RF_Public | RF_Standalone | RF_Transient | RF_MarkAsNative | RF_MarkAsRootSet),
+		InClassConstructor,
+		InClassVTableHelperCtorCaller,
+		InClassAddReferencedObjects
+		);
+	check(ReturnClass);
+	
+	InitializePrivateStaticClass(
+		InSuperClassFn(),
+		ReturnClass,
+		InWithinClassFn(),
+		PackageName,
+		Name
+		);
+
+	// Register the class's native functions.
+	RegisterNativeFunc();
+}
+
+// 第一次调 GetPrivateStaticClassBody 的最顶入口是这个方法，该方法声明，定义都在 TestActor.gen.cpp ，UHT生成的
+REFLECTIONPLUGIN_API UClass* Z_Construct_UClass_ATestActor_NoRegister();
+UClass* Z_Construct_UClass_ATestActor_NoRegister()
+{
+	return ATestActor::StaticClass();
+}
 
 
 
