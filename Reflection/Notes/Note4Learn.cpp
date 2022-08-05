@@ -1,6 +1,6 @@
 UE 的反射
 
-1，注册阶段
+1，生成反射信息
 
 基于 UHT ， UBT 生成反射信息和代码
 
@@ -273,7 +273,13 @@ public: \
 IMPLEMENT_CLASS_NO_AUTO_REGISTRATION(ATestActor); 具体是写在 TestActor.gen.cpp 文件下的，由 UHT 生成。
 展开如下：
 {
+	/**
+	该全局变量在注册阶段中的利用静态全局变量的性质去收集反射信息时，
+	通过一个类型是 FClassRegisterCompiledInInfo 的 ClassInfo[] 传入注册，
+	会先把它存在一个类型是 FClassDeferredRegistry 的单例中的 Registrations 容器里。
+	*/
     FClassRegistrationInfo Z_Registration_Info_UClass_ATestActor;
+
 	UClass* ATestActor::GetPrivateStaticClass()
 	{
 		if (!Z_Registration_Info_UClass_ATestActor.InnerSingleton)
@@ -329,18 +335,19 @@ struct FClassReloadVersionInfo
 };
 理解为：
 struct FClassRegistrationInfo = {
-	UClass* InnerSingleton = nullptr;
-	UClass* OuterSingleton = nullptr;
-	FClassReloadVersionInfo ReloadVersionInfo;
+	UClass* InnerSingleton = nullptr;					// 最终存着该类对应的 UClass
+	UClass* OuterSingleton = nullptr;					// @TODO
+	FClassReloadVersionInfo ReloadVersionInfo;			// 应该是编辑器热更 C++ 用的吧
 }
 
-
-
+/**
+构造 UClass 的核心方法
+*/
 void GetPrivateStaticClassBody(
-	const TCHAR* PackageName,
-	const TCHAR* Name,
-	UClass*& ReturnClass,
-	void(*RegisterNativeFunc)(),
+	const TCHAR* PackageName,					// 在该例子对应，"/Script/ReflectionPlugin"
+	const TCHAR* Name,							// 在该例子对应，"TestActor"
+	UClass*& ReturnClass,						// 在该例子对应，构造的 UClass 最终返回到 Z_Registration_Info_UClass_ATestActor.InnerSingleton
+	void(*RegisterNativeFunc)(),				// 在该例子对应， ATestActor::StaticRegisterNativesATestActor
 	uint32 InSize,
 	uint32 InAlignment,
 	EClassFlags InClassFlags,
@@ -349,8 +356,8 @@ void GetPrivateStaticClassBody(
 	UClass::ClassConstructorType InClassConstructor,
 	UClass::ClassVTableHelperCtorCallerType InClassVTableHelperCtorCaller,
 	UClass::ClassAddReferencedObjectsType InClassAddReferencedObjects,
-	UClass::StaticClassFunctionType InSuperClassFn,
-	UClass::StaticClassFunctionType InWithinClassFn
+	UClass::StaticClassFunctionType InSuperClassFn,		// 在该例子对应， ATestActor::Super::StaticClass 函数指针
+	UClass::StaticClassFunctionType InWithinClassFn		// 在该例子对应， ATestActor::WithinClass::StaticClass 函数指针 @TODO 目前不太清楚 WithinClass 表示什么 干嘛用
 	)
 {
 	ReturnClass = (UClass*)GUObjectAllocator.AllocateUObject(sizeof(UClass), alignof(UClass), true);
@@ -379,18 +386,456 @@ void GetPrivateStaticClassBody(
 		Name
 		);
 
+	/**
+	实际调该类的 StaticRegisterNativesATestActor 静态方法，具体看上面
+	*/
 	// Register the class's native functions.
 	RegisterNativeFunc();
 }
 
-// 第一次调 GetPrivateStaticClassBody 的最顶入口是这个方法，该方法声明，定义都在 TestActor.gen.cpp ，UHT生成的
-REFLECTIONPLUGIN_API UClass* Z_Construct_UClass_ATestActor_NoRegister();
-UClass* Z_Construct_UClass_ATestActor_NoRegister()
+/**
+ * Shared function called from the various InitializePrivateStaticClass functions generated my the IMPLEMENT_CLASS macro.
+ */
+COREUOBJECT_API void InitializePrivateStaticClass(
+	class UClass* TClass_Super_StaticClass,
+	class UClass* TClass_PrivateStaticClass,
+	class UClass* TClass_WithinClass_StaticClass,
+	const TCHAR* PackageName,		// 在该例子对应，"/Script/ReflectionPlugin"
+	const TCHAR* Name				// 在该例子对应，"TestActor"
+	)
 {
-	return ATestActor::StaticClass();
+	TRACE_LOADTIME_CLASS_INFO(TClass_PrivateStaticClass, Name);
+	NotifyRegistrationEvent(PackageName, Name, ENotifyRegistrationType::NRT_Class, ENotifyRegistrationPhase::NRP_Started);
+
+	/* No recursive ::StaticClass calls allowed. Setup extras. */
+	if (TClass_Super_StaticClass != TClass_PrivateStaticClass)
+	{
+		TClass_PrivateStaticClass->SetSuperStruct(TClass_Super_StaticClass);
+	}
+	else
+	{
+		TClass_PrivateStaticClass->SetSuperStruct(NULL);
+	}
+	TClass_PrivateStaticClass->ClassWithin = TClass_WithinClass_StaticClass;
+
+	// Register the class's dependencies, then itself.
+	TClass_PrivateStaticClass->RegisterDependencies();
+	{
+		// Defer
+		TClass_PrivateStaticClass->Register(PackageName, Name);
+	}
+	
+	NotifyRegistrationEvent(PackageName, Name, ENotifyRegistrationType::NRT_Class, ENotifyRegistrationPhase::NRP_Finished);
+}
+
+/** Objects to automatically register once the object system is ready.					*/
+struct FPendingRegistrant
+{
+	UObjectBase*	Object;			// 应该实际存的都是 UClass
+	FPendingRegistrant*	NextAutoRegister;
+	FPendingRegistrant(UObjectBase* InObject)
+	:	Object(InObject)
+	,	NextAutoRegister(NULL)
+	{}
+};
+/**
+指向链头，该链表存着待注册的所有 UClass ， UE 在 loadLib 时通过反射代码生成的静态全局变量把所有需要生成放射信息的类都收集到 FClassDeferredRegistry 类里，
+之后通过这些收集到的信息生成所有这些类对应的 UClass ，同时就形成了这条链表，该链表为后续对 UClass 的处理做准备。
+*/
+static FPendingRegistrant* GFirstPendingRegistrant = NULL;
+// 指向链尾
+static FPendingRegistrant* GLastPendingRegistrant = NULL;
+/** Objects to automatically register once the object system is ready.					*/
+struct FPendingRegistrantInfo
+{
+	const TCHAR*	Name;				// 类名
+	const TCHAR*	PackageName;		// 包名
+	FPendingRegistrantInfo(const TCHAR* InName,const TCHAR* InPackageName)
+		:	Name(InName)
+		,	PackageName(InPackageName)
+	{}
+	static TMap<UObjectBase*, FPendingRegistrantInfo>& GetMap()
+	{
+		/**
+		实际 key 对应类的 UClass 地址， value 就是对应类的类名和包名
+		这个 map 就是上面形成链表的时候，同时构造的，同样为后续对 UClass 的处理做准备。
+		*/
+		static TMap<UObjectBase*, FPendingRegistrantInfo> PendingRegistrantInfo;
+		return PendingRegistrantInfo;
+	}
+};
+/** Enqueue the registration for this object. */
+void UObjectBase::Register(const TCHAR* PackageName,const TCHAR* InName)
+{
+	TMap<UObjectBase*, FPendingRegistrantInfo>& PendingRegistrants = FPendingRegistrantInfo::GetMap();
+
+	FPendingRegistrant* PendingRegistration = new FPendingRegistrant(this);
+	PendingRegistrants.Add(this, FPendingRegistrantInfo(InName, PackageName));		// 生成 map ，存下 UClass 对应类名，包名
+
+	if (GLastPendingRegistrant)
+	{
+		GLastPendingRegistrant->NextAutoRegister = PendingRegistration;
+	}
+	else
+	{
+		check(!GFirstPendingRegistrant);
+		GFirstPendingRegistrant = PendingRegistration;		// 生成链表，当前注册过程的所有 UClass
+	}
+	GLastPendingRegistrant = PendingRegistration;
 }
 
 
+
+
+
+
+
+2，注册反射信息
+
+UClass* Z_Construct_UClass_ATestActor()
+{
+	if (!Z_Registration_Info_UClass_ATestActor.OuterSingleton)
+	{
+		UECodeGen_Private::ConstructUClass(
+			Z_Registration_Info_UClass_ATestActor.OuterSingleton,
+			Z_Construct_UClass_ATestActor_Statics::ClassParams
+		);
+	}
+	return Z_Registration_Info_UClass_ATestActor.OuterSingleton;
+}
+/**
+ * Composite class register compiled in info
+ */
+struct FClassRegisterCompiledInInfo
+{
+	class UClass* (*OuterRegister)();
+	class UClass* (*InnerRegister)();
+	const TCHAR* Name;
+	FClassRegistrationInfo* Info;
+	FClassReloadVersionInfo VersionInfo;
+};
+struct Z_CompiledInDeferFile_FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_Statics
+{
+	static const FClassRegisterCompiledInInfo ClassInfo[];			// @TODO 这里有可能是多个？数组？不知道是不是如果我们在一个 h 文件里声明多个用 UClass() 标记的类就会产生多个
+};
+const FClassRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_Statics::ClassInfo[] = {
+	{
+		Z_Construct_UClass_ATestActor,					// @TODO
+		ATestActor::StaticClass,						// 函数指针，之后用于构造 UClass 用的
+		TEXT("ATestActor"),								// 最开始的类名定义在这，注意这里传入的类名带前缀
+		&Z_Registration_Info_UClass_ATestActor,			// 该全局变量是在 IMPLEMENT_CLASS_NO_AUTO_REGISTRATION 时定义的
+		CONSTRUCT_RELOAD_VERSION_INFO(
+			FClassReloadVersionInfo,
+			sizeof(ATestActor),
+			3358495191U
+		)
+	},
+};
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_3186094926(
+	TEXT("/Script/ReflectionPlugin"),		// 最开始的包名定义在这
+	Z_CompiledInDeferFile_FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_Statics::ClassInfo,
+	UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_Statics::ClassInfo),
+	nullptr,
+	0,
+	nullptr, 
+	0
+);
+上面第1部分我们分析了生成出来的反射代码，那运行时是怎么注册反射信息的呢，入口如上，上面的代码一样也是 UHT 生成的，在 TestActor.gen.cpp 文件中。
+首先，定义了个静态的 FClassRegisterCompiledInInfo 类型的 ClassInfo[] （暂时不清楚是不是会有多个的情况），然后马上就定义了具体怎么构造它出来。
+目前理解这个 ClassInfo[] 表示的是要完成注册该类的反射信息这整个流程里所用到的参数。
+接着又定义了一个类型是 FRegisterCompiledInInfo 的静态全局变量，利用静态的特性在 main 函数前就构造了该变量，然后在构造函数里执行我们上面分析的反射代码。
+大概的执行堆栈如下，首先 UE 的代码以模块划分，当 loadLib 的时候就会构造这些静态全局变量从而开始注册相应的反射信息。
+总之，第一步是利用静态全局变量的性质收集所有要生成反射信息的类对应的 ClassInfo[] 存在 FClassDeferredRegistry 单例里，待之后下一步处理。
+/*
+	UnrealEditor-ReflectionPlugin.dll!`dynamic initializer for 'Z_CompiledInDeferFile_FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_3186094926''() Line 331	C++
+ 	[External Code]	
+ 	UnrealEditor-Core.dll!FWindowsPlatformProcess::LoadLibraryWithSearchPaths(const FString & FileName, const TArray<FString,TSizedDefaultAllocator<32>> & SearchPaths) Line 1964	C++
+ 	UnrealEditor-Core.dll!FWindowsPlatformProcess::GetDllHandle(const wchar_t * FileName) Line 92	C++
+ 	UnrealEditor-Core.dll!FModuleManager::LoadModuleWithFailureReason(const FName InModuleName, EModuleLoadResult & OutFailureReason, ELoadModuleFlags InLoadModuleFlags) Line 545	C++
+ 	UnrealEditor-Projects.dll!FModuleDescriptor::LoadModulesForPhase(ELoadingPhase::Type LoadingPhase, const TArray<FModuleDescriptor,TSizedDefaultAllocator<32>> & Modules, TMap<FName,enum EModuleLoadResult,FDefaultSetAllocator,TDefaultMapHashableKeyFuncs<FName,enum EModuleLoadResult,0>> & ModuleLoadErrors) Line 690	C++
+ 	UnrealEditor-Projects.dll!FPluginManager::TryLoadModulesForPlugin(const FPlugin & Plugin, const ELoadingPhase::Type LoadingPhase) Line 1583	C++
+ 	UnrealEditor-Projects.dll!FPluginManager::LoadModulesForEnabledPlugins(const ELoadingPhase::Type LoadingPhase) Line 1658	C++
+ 	UnrealEditor.exe!FEngineLoop::LoadStartupModules() Line 4118	C++
+ 	UnrealEditor.exe!FEngineLoop::PreInitPostStartupScreen(const wchar_t * CmdLine) Line 3469	C++
+ 	[Inline Frame] UnrealEditor.exe!FEngineLoop::PreInit(const wchar_t *) Line 3883	C++
+ 	[Inline Frame] UnrealEditor.exe!EnginePreInit(const wchar_t *) Line 42	C++
+ 	UnrealEditor.exe!GuardedMain(const wchar_t * CmdLine) Line 137	C++
+ 	UnrealEditor.exe!LaunchWindowsStartup(HINSTANCE__ * hInInstance, HINSTANCE__ * hPrevInstance, char * __formal, int nCmdShow, const wchar_t * CmdLine) Line 272	C++
+ 	UnrealEditor.exe!WinMain(HINSTANCE__ * hInInstance, HINSTANCE__ * hPrevInstance, char * pCmdLine, int nCmdShow) Line 330	C++
+ 	[External Code]
+*/
+
+
+/**
+ * Helper class to perform registration of object information.  It blindly forwards a call to RegisterCompiledInInfo
+ */
+struct FRegisterCompiledInInfo
+{
+	template <typename ... Args>
+	FRegisterCompiledInInfo(Args&& ... args)		// @TODO 利用可变参数模板
+	{
+		RegisterCompiledInInfo(std::forward<Args>(args)...);
+	}
+};
+
+// Multiple registrations
+void RegisterCompiledInInfo(
+	const TCHAR* PackageName,			// 包名
+	const FClassRegisterCompiledInInfo* ClassInfo,		// 类对应生成反射信息用到的信息
+	size_t NumClassInfo,
+	const FStructRegisterCompiledInInfo* StructInfo,
+	size_t NumStructInfo,
+	const FEnumRegisterCompiledInInfo* EnumInfo,
+	size_t NumEnumInfo)
+{
+	for (size_t Index = 0; Index < NumClassInfo; ++Index)
+	{
+		// 类相关的跑到这里
+		const FClassRegisterCompiledInInfo& Info = ClassInfo[Index];
+		RegisterCompiledInInfo(Info.OuterRegister, Info.InnerRegister, PackageName, Info.Name, *Info.Info, Info.VersionInfo);
+	}
+
+	for (size_t Index = 0; Index < NumStructInfo; ++Index)
+	{
+		const FStructRegisterCompiledInInfo& Info = StructInfo[Index];
+		RegisterCompiledInInfo(Info.OuterRegister, PackageName, Info.Name, *Info.Info, Info.VersionInfo);
+		if (Info.CreateCppStructOps != nullptr)
+		{
+			UScriptStruct::DeferCppStructOps(FName(Info.Name), (UScriptStruct::ICppStructOps*)Info.CreateCppStructOps());
+		}
+	}
+
+	for (size_t Index = 0; Index < NumEnumInfo; ++Index)
+	{
+		const FEnumRegisterCompiledInInfo& Info = EnumInfo[Index];
+		RegisterCompiledInInfo(Info.OuterRegister, PackageName, Info.Name, *Info.Info, Info.VersionInfo);
+	}
+}
+
+/**
+ * Adds a class registration and version information. The InInfo parameter must be static.
+ */
+void RegisterCompiledInInfo(class UClass* (*InOuterRegister)(), class UClass* (*InInnerRegister)(), const TCHAR* InPackageName, const TCHAR* InName, FClassRegistrationInfo& InInfo, const FClassReloadVersionInfo& InVersionInfo)
+{
+	bool bExisting = FClassDeferredRegistry::Get().AddRegistration(InOuterRegister, InInnerRegister, InPackageName, InName, InInfo, InVersionInfo, nullptr);
+}
+
+// Adds the given registration information for the given object.  Objects are either classes, structs, or enumerations.
+bool AddRegistration(TType* (*InOuterRegister)(), TType* (*InInnerRegister)(), const TCHAR* InPackageName, const TCHAR* InName, TInfo& InInfo, const TVersion& InVersion, FFieldCompiledInInfo* DeprecatedFieldInfo)
+{
+	/**
+	到此，第一步基本就全做完了，归根到底就是把 ClassInfo[] 的信息先 cache 下来
+	*/
+	Registrations.Add(FRegistrant{ InOuterRegister, InInnerRegister, InPackageName, &InInfo, DeprecatedFieldInfo });
+	return false;
+}
+
+using FClassDeferredRegistry = TDeferredRegistry<FClassRegistrationInfo>;
+template <typename T>
+class TDeferredRegistry
+{
+public:
+	using TInfo = T;
+	using TType = typename T::TType;
+	using TVersion = typename T::TVersion;
+private:
+	using FPackageAndNameKey = TTuple<FName, FName>;
+public:
+	/**
+	* Maintains information about a pending registration
+	*/
+	struct FRegistrant
+	{
+		TType* (*OuterRegisterFn)();
+		TType* (*InnerRegisterFn)();
+		const TCHAR* PackageName;
+		TInfo* Info;
+		FFieldCompiledInInfo* DeprecatedFieldInfo;
+	};
+private:
+	TArray<FRegistrant> Registrations;		// 主要属性，注册流程要用到的信息都放到这容器中先
+	int32 ProcessedRegistrations = 0;		// @TODO
+}
+
+/**
+本例子下，调 ProcessNewlyLoadedUObjects 的堆栈
+>	UnrealEditor-CoreUObject.dll!ProcessNewlyLoadedUObjects(FName Package, bool bCanProcessNewlyLoadedObjects) Line 896	C++
+ 	[Inline Frame] UnrealEditor-CoreUObject.dll!Invoke(void(*)(FName, bool) &) Line 47	C++
+ 	[Inline Frame] UnrealEditor-CoreUObject.dll!UE::Core::Private::Tuple::TTupleBase<TIntegerSequence<unsigned int>>::ApplyAfter(void(*)(FName, bool) &) Line 324	C++
+ 	UnrealEditor-CoreUObject.dll!TBaseStaticDelegateInstance<void __cdecl(FName,bool),FDefaultDelegateUserPolicy>::ExecuteIfSafe(FName <Params_0>, bool <Params_1>) Line 731	C++
+ 	UnrealEditor-Core.dll!TMulticastDelegate<void __cdecl(FName,bool),FDefaultDelegateUserPolicy>::Broadcast(FName <Params_0>, bool <Params_1>) Line 967	C++
+ 	UnrealEditor-Core.dll!FModuleManager::LoadModuleWithFailureReason(const FName InModuleName, EModuleLoadResult & OutFailureReason, ELoadModuleFlags InLoadModuleFlags) Line 558	C++
+ 	UnrealEditor-Projects.dll!FModuleDescriptor::LoadModulesForPhase(ELoadingPhase::Type LoadingPhase, const TArray<FModuleDescriptor,TSizedDefaultAllocator<32>> & Modules, TMap<FName,enum EModuleLoadResult,FDefaultSetAllocator,TDefaultMapHashableKeyFuncs<FName,enum EModuleLoadResult,0>> & ModuleLoadErrors) Line 690	C++
+ 	UnrealEditor-Projects.dll!FPluginManager::TryLoadModulesForPlugin(const FPlugin & Plugin, const ELoadingPhase::Type LoadingPhase) Line 1583	C++
+ 	UnrealEditor-Projects.dll!FPluginManager::LoadModulesForEnabledPlugins(const ELoadingPhase::Type LoadingPhase) Line 1658	C++
+ 	UnrealEditor.exe!FEngineLoop::LoadStartupModules() Line 4118	C++
+ 	UnrealEditor.exe!FEngineLoop::PreInitPostStartupScreen(const wchar_t * CmdLine) Line 3469	C++
+ 	[Inline Frame] UnrealEditor.exe!FEngineLoop::PreInit(const wchar_t *) Line 3883	C++
+ 	[Inline Frame] UnrealEditor.exe!EnginePreInit(const wchar_t *) Line 42	C++
+ 	UnrealEditor.exe!GuardedMain(const wchar_t * CmdLine) Line 137	C++
+ 	UnrealEditor.exe!LaunchWindowsStartup(HINSTANCE__ * hInInstance, HINSTANCE__ * hPrevInstance, char * __formal, int nCmdShow, const wchar_t * CmdLine) Line 272	C++
+ 	UnrealEditor.exe!WinMain(HINSTANCE__ * hInInstance, HINSTANCE__ * hPrevInstance, char * pCmdLine, int nCmdShow) Line 330	C++
+ 	[External Code]	
+*/
+/** Must be called after a module has been loaded that contains UObject classes */
+void ProcessNewlyLoadedUObjects(FName Package, bool bCanProcessNewlyLoadedObjects)
+{
+	if (!bCanProcessNewlyLoadedObjects)
+	{
+		return;
+	}
+
+	FPackageDeferredRegistry& PackageRegistry = FPackageDeferredRegistry::Get();
+	FClassDeferredRegistry& ClassRegistry = FClassDeferredRegistry::Get();
+	FStructDeferredRegistry& StructRegistry = FStructDeferredRegistry::Get();
+	FEnumDeferredRegistry& EnumRegistry = FEnumDeferredRegistry::Get();
+
+	PackageRegistry.ProcessChangedObjects(true);
+	StructRegistry.ProcessChangedObjects();
+	EnumRegistry.ProcessChangedObjects();
+
+	UClassRegisterAllCompiledInClasses();		// 该处主要就是对收集到的注册了反射信息的类构造他们的UClass
+
+	bool bNewUObjects = false;
+	while (GFirstPendingRegistrant ||
+		ClassRegistry.HasPendingRegistrations() ||
+		StructRegistry.HasPendingRegistrations() ||
+		EnumRegistry.HasPendingRegistrations())
+	{
+		bNewUObjects = true;
+		UObjectProcessRegistrants();
+		UObjectLoadAllCompiledInStructs();
+
+		FCoreUObjectDelegates::CompiledInUObjectsRegisteredDelegate.Broadcast(Package);
+
+		UObjectLoadAllCompiledInDefaultProperties();
+	}
+
+	PackageRegistry.EmptyRegistrations();
+	EnumRegistry.EmptyRegistrations();
+	StructRegistry.EmptyRegistrations();
+	ClassRegistry.EmptyRegistrations();
+
+	if (bNewUObjects && !GIsInitialLoad)
+	{
+		UClass::AssembleReferenceTokenStreams();
+	}
+}
+
+/** Register all loaded classes */
+void UClassRegisterAllCompiledInClasses()
+{
+	FClassDeferredRegistry& Registry = FClassDeferredRegistry::Get();
+
+	Registry.ProcessChangedObjects();
+
+	for (const FClassDeferredRegistry::FRegistrant& Registrant : Registry.GetRegistrations())
+	{
+		/**
+		该处主要就是调用了 Registrant.InnerRegisterFn();
+		在该例子中，就是调用对应的 ATestActor::StaticClass 方法
+		StaticClass 方法里归根到底就是调 GetPrivateStaticClassBody 来构造该类的 UClass
+		*/
+		UClass* RegisteredClass = FClassDeferredRegistry::InnerRegister(Registrant);
+	}
+}
+
+/**
+ * Process the auto register objects adding them to the UObject array
+ */
+static void UObjectProcessRegistrants()
+{
+	// Make list of all objects to be registered.
+	TArray<FPendingRegistrant> PendingRegistrants;
+	DequeuePendingAutoRegistrants(PendingRegistrants);		// 主要就是将 GFirstPendingRegistrant 形成的链表复制到 PendingRegistrants 数组上
+
+	for(int32 RegistrantIndex = 0;RegistrantIndex < PendingRegistrants.Num();++RegistrantIndex)
+	{
+		const FPendingRegistrant& PendingRegistrant = PendingRegistrants[RegistrantIndex];
+
+		UObjectForceRegistration(PendingRegistrant.Object, false);
+
+		check(PendingRegistrant.Object->GetClass()); // should have been set by DeferredRegister
+
+		// Register may have resulted in new pending registrants being enqueued, so dequeue those.
+		DequeuePendingAutoRegistrants(PendingRegistrants);
+	}
+}
+
+/**
+ * Force a pending registrant to register now instead of in the natural order
+ */
+void UObjectForceRegistration(UObjectBase* Object, bool bCheckForModuleRelease)
+{
+	TMap<UObjectBase*, FPendingRegistrantInfo>& PendingRegistrants = FPendingRegistrantInfo::GetMap();
+
+	FPendingRegistrantInfo* Info = PendingRegistrants.Find(Object);
+	if (Info)
+	{
+		const TCHAR* PackageName = Info->PackageName;
+		const TCHAR* Name = Info->Name;
+		PendingRegistrants.Remove(Object);  // delete this first so that it doesn't try to do it twice
+		Object->DeferredRegister(UClass::StaticClass(),PackageName,Name);
+	}
+}
+
+/**
+ * Convert a boot-strap registered class into a real one, add to uobject array, etc
+ *
+ * @param UClassStaticClass Now that it is known, fill in UClass::StaticClass() as the class
+ */
+void UObjectBase::DeferredRegister(UClass *UClassStaticClass,const TCHAR* PackageName,const TCHAR* InName)
+{
+	// Set object properties.
+	UPackage* Package = CreatePackage(PackageName);
+	Package->SetPackageFlags(PKG_CompiledIn);
+	OuterPrivate = Package;
+
+	ClassPrivate = UClassStaticClass;
+
+	// Add to the global object table.
+	AddObject(FName(InName), EInternalObjectFlags::None);
+	// At this point all compiled-in objects should have already been fully constructed so it's safe to remove the NotFullyConstructed flag
+	// which was set in FUObjectArray::AllocateUObjectIndex (called from AddObject)
+	GUObjectArray.IndexToObject(InternalIndex)->ClearFlags(EInternalObjectFlags::PendingConstruction);
+
+	// Make sure that objects disregarded for GC are part of root set.
+	check(!GUObjectArray.IsDisregardForGC(this) || GUObjectArray.IndexToObject(InternalIndex)->IsRootSet());
+}
+
+/**
+ * Add a newly created object to the name hash tables and the object array
+ *
+ * @param Name name to assign to this uobject
+ */
+void UObjectBase::AddObject(FName InName, EInternalObjectFlags InSetInternalFlags)
+{
+	NamePrivate = InName;
+	EInternalObjectFlags InternalFlagsToSet = InSetInternalFlags;
+	if (!IsInGameThread())
+	{
+		InternalFlagsToSet |= EInternalObjectFlags::Async;
+	}
+	if (ObjectFlags & RF_MarkAsRootSet)
+	{		
+		InternalFlagsToSet |= EInternalObjectFlags::RootSet;
+		ObjectFlags &= ~RF_MarkAsRootSet;
+	}
+	if (ObjectFlags & RF_MarkAsNative)
+	{
+		InternalFlagsToSet |= EInternalObjectFlags::Native;
+		ObjectFlags &= ~RF_MarkAsNative;
+	}
+	GUObjectArray.AllocateUObjectIndex(this);
+	check(InName != NAME_None && InternalIndex >= 0);
+	if (InternalFlagsToSet != EInternalObjectFlags::None)
+	{
+		GUObjectArray.IndexToObject(InternalIndex)->SetFlags(InternalFlagsToSet);
+	
+	}	
+	HashObject(this);
+	check(IsValidLowLevel());
+}
 
 
 
