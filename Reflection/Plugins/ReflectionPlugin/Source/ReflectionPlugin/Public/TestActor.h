@@ -25,20 +25,20 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	UPROPERTY()
-	UTestComponent* TestComp;
+	float TestVal = 123.666f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	UTestComponent* TestCompBp;
+	UTestComponent* TestComp;
 
 	UFUNCTION()
-	int TestUFuncOnly(const FString& InStr);
+	int32 TestUFuncOnly(const int32& A, const int32& B);
 
 	UFUNCTION(BlueprintCallable)
-	int TestUFuncBpCallable(const FString& InStr);
+	int32 TestUFuncBpCallable(const FString& InStr);
 
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
-	int TestUFuncBpImpl(const FString& InStr);
+	int32 TestUFuncBpImpl(const FString& InStr);
 
 	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
-	int TestUFuncBpNative(const FString& InStr);
+	int32 TestUFuncBpNative(const FString& InStr);
 };

@@ -1,5 +1,19 @@
 UE 的反射
 
+@TODO
+POD 类型是什么
+
+UClass -> UStruct -> UField -> UObject -> UObjectBaseUtility -> UObjectBase
+UPackage -> UObject
+UFunction -> UStruct
+FProperty -> FField
+UEnum -> UField
+UMetaData -> UObject
+AActor -> UObject
+UActorComponent -> UObject
+AGameModeBase -> AInfo -> AActor
+APlayerController -> AController -> AActor
+
 1，生成反射信息
 
 基于 UHT ， UBT 生成反射信息和代码
@@ -129,6 +143,111 @@ struct Z_Construct_UClass_ATestActor_Statics
     static const FCppClassTypeInfoStatic StaticCppClassTypeInfo;
     static const UECodeGen_Private::FClassParams ClassParams;
 };
+struct FClassParams		// @TODO 分析下每个属性有咩用
+{
+	UClass*                                   (*ClassNoRegisterFunc)();
+	const char*                                 ClassConfigNameUTF8;
+	const FCppClassTypeInfoStatic*              CppClassInfo;
+	UObject*                           (*const *DependencySingletonFuncArray)();
+	const FClassFunctionLinkInfo*               FunctionLinkArray;
+	const FPropertyParamsBase* const*           PropertyArray;
+	const FImplementedInterfaceParams*          ImplementedInterfaceArray;
+	int32                                       NumDependencySingletons;
+	int32                                       NumFunctions;
+	int32                                       NumProperties;
+	int32                                       NumImplementedInterfaces;
+	uint32                                      ClassFlags; // EClassFlags
+#if WITH_METADATA
+	const FMetaDataPairParam*                   MetaDataArray;
+	int32                                       NumMetaData;
+#endif
+};
+const UECodeGen_Private::FClassParams Z_Construct_UClass_ATestActor_Statics::ClassParams = {
+	&ATestActor::StaticClass,
+	"Engine",
+	&StaticCppClassTypeInfo,
+	DependentSingletons,
+	FuncInfo,
+	Z_Construct_UClass_ATestActor_Statics::PropPointers,
+	nullptr,
+	UE_ARRAY_COUNT(DependentSingletons),
+	UE_ARRAY_COUNT(FuncInfo),
+	UE_ARRAY_COUNT(Z_Construct_UClass_ATestActor_Statics::PropPointers),
+	0,
+	0x009000A4u,
+	METADATA_PARAMS(Z_Construct_UClass_ATestActor_Statics::Class_MetaDataParams, UE_ARRAY_COUNT(Z_Construct_UClass_ATestActor_Statics::Class_MetaDataParams))
+};
+UObject* (*const Z_Construct_UClass_ATestActor_Statics::DependentSingletons[])() = {
+	(UObject* (*)())Z_Construct_UClass_AActor,
+	(UObject* (*)())Z_Construct_UPackage__Script_ReflectionPlugin,
+};
+const FClassFunctionLinkInfo Z_Construct_UClass_ATestActor_Statics::FuncInfo[] = {
+	{ &Z_Construct_UFunction_ATestActor_TestUFuncBpCallable, "TestUFuncBpCallable" }, // 1915752389
+	{ &Z_Construct_UFunction_ATestActor_TestUFuncBpImpl, "TestUFuncBpImpl" }, // 2253205259
+	{ &Z_Construct_UFunction_ATestActor_TestUFuncBpNative, "TestUFuncBpNative" }, // 466954449
+	{ &Z_Construct_UFunction_ATestActor_TestUFuncOnly, "TestUFuncOnly" }, // 508779232
+};
+const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_ATestActor_Statics::PropPointers[] = {
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ATestActor_Statics::NewProp_TestComp,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ATestActor_Statics::NewProp_TestCompBp,
+};
+const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ATestActor_Statics::NewProp_TestComp = {
+	"TestComp",
+	nullptr,
+	(EPropertyFlags)0x0010000000080008,
+	UECodeGen_Private::EPropertyGenFlags::Object,
+	RF_Public|RF_Transient|RF_MarkAsNative,
+	1,
+	STRUCT_OFFSET(ATestActor, TestComp),
+	Z_Construct_UClass_UTestComponent_NoRegister,
+	METADATA_PARAMS(
+		Z_Construct_UClass_ATestActor_Statics::NewProp_TestComp_MetaData,
+		UE_ARRAY_COUNT(Z_Construct_UClass_ATestActor_Statics::NewProp_TestComp_MetaData)
+	)
+};
+const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ATestActor_Statics::NewProp_TestCompBp = { "TestCompBp", nullptr, (EPropertyFlags)0x001000000008001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, 1, STRUCT_OFFSET(ATestActor, TestCompBp), Z_Construct_UClass_UTestComponent_NoRegister, METADATA_PARAMS(Z_Construct_UClass_ATestActor_Statics::NewProp_TestCompBp_MetaData, UE_ARRAY_COUNT(Z_Construct_UClass_ATestActor_Statics::NewProp_TestCompBp_MetaData)) };
+// begin 这部分在 Actor.gen.cpp 文件中
+UClass* Z_Construct_UClass_AActor()
+{
+	if (!Z_Registration_Info_UClass_AActor.OuterSingleton)
+	{
+		UECodeGen_Private::ConstructUClass(Z_Registration_Info_UClass_AActor.OuterSingleton, Z_Construct_UClass_AActor_Statics::ClassParams);
+	}
+	return Z_Registration_Info_UClass_AActor.OuterSingleton;
+}
+// end
+// begin 这部分在 ReflectionPlugin.init.gen.cpp 文件中
+static FPackageRegistrationInfo Z_Registration_Info_UPackage__Script_ReflectionPlugin;
+FORCENOINLINE UPackage* Z_Construct_UPackage__Script_ReflectionPlugin()
+{
+	if (!Z_Registration_Info_UPackage__Script_ReflectionPlugin.OuterSingleton)
+	{
+		static const UECodeGen_Private::FPackageParams PackageParams = {
+			"/Script/ReflectionPlugin",
+			nullptr,
+			0,
+			PKG_CompiledIn | 0x00000000,
+			0xAD794BF9,
+			0xC9DB9E22,
+			METADATA_PARAMS(nullptr, 0)
+		};
+		UECodeGen_Private::ConstructUPackage(Z_Registration_Info_UPackage__Script_ReflectionPlugin.OuterSingleton, PackageParams);
+	}
+	return Z_Registration_Info_UPackage__Script_ReflectionPlugin.OuterSingleton;
+}
+static FRegisterCompiledInInfo Z_CompiledInDeferPackage_UPackage__Script_ReflectionPlugin(Z_Construct_UPackage__Script_ReflectionPlugin, TEXT("/Script/ReflectionPlugin"), Z_Registration_Info_UPackage__Script_ReflectionPlugin, CONSTRUCT_RELOAD_VERSION_INFO(FPackageReloadVersionInfo, 0xAD794BF9, 0xC9DB9E22));
+// end
+UFunction* Z_Construct_UFunction_ATestActor_TestUFuncBpCallable()
+{
+	static UFunction* ReturnFunction = nullptr;
+	if (!ReturnFunction)
+	{
+		UECodeGen_Private::ConstructUFunction(&ReturnFunction, Z_Construct_UFunction_ATestActor_TestUFuncBpCallable_Statics::FuncParams);
+	}
+	return ReturnFunction;
+}
+
+
 
 解析 DECLARE_CLASS
 原型：
@@ -694,7 +813,11 @@ void ProcessNewlyLoadedUObjects(FName Package, bool bCanProcessNewlyLoadedObject
 	StructRegistry.ProcessChangedObjects();
 	EnumRegistry.ProcessChangedObjects();
 
-	UClassRegisterAllCompiledInClasses();		// 该处主要就是对收集到的注册了反射信息的类构造他们的UClass
+	/**
+	该处主要就是对当前收集到的注册了反射信息的类构造他们的UClass
+	该例子中就是把 Package("/Script/ReflectionPlugin") 模块下的类，就是 ATestActor , UTestComponent 把他们的 UClass 构造出来。
+	*/
+	UClassRegisterAllCompiledInClasses();
 
 	bool bNewUObjects = false;
 	while (GFirstPendingRegistrant ||
@@ -703,6 +826,10 @@ void ProcessNewlyLoadedUObjects(FName Package, bool bCanProcessNewlyLoadedObject
 		EnumRegistry.HasPendingRegistrations())
 	{
 		bNewUObjects = true;
+		/**
+		上面已经把当前收集到需要反射的类的 UClass 构造了出来，并形成了一条链表
+		下面的方法主要就是遍历这条链表，初始化 UClass 的一些属性和把 UClass 加进一个叫 GUObjectArray 的容器里
+		*/
 		UObjectProcessRegistrants();
 		UObjectLoadAllCompiledInStructs();
 
@@ -735,6 +862,7 @@ void UClassRegisterAllCompiledInClasses()
 		该处主要就是调用了 Registrant.InnerRegisterFn();
 		在该例子中，就是调用对应的 ATestActor::StaticClass 方法
 		StaticClass 方法里归根到底就是调 GetPrivateStaticClassBody 来构造该类的 UClass
+		并且对应的 UClass 构造出来后会现成一条链表待之后进一步处理
 		*/
 		UClass* RegisteredClass = FClassDeferredRegistry::InnerRegister(Registrant);
 	}
@@ -742,6 +870,7 @@ void UClassRegisterAllCompiledInClasses()
 
 /**
  * Process the auto register objects adding them to the UObject array
+ 遍历 GFirstPendingRegistrant 的链表，把当前收集到的需要反射的类的 UClass 初始化一些属性，并加入 GUObjectArray 容器里
  */
 static void UObjectProcessRegistrants()
 {
@@ -758,7 +887,7 @@ static void UObjectProcessRegistrants()
 		check(PendingRegistrant.Object->GetClass()); // should have been set by DeferredRegister
 
 		// Register may have resulted in new pending registrants being enqueued, so dequeue those.
-		DequeuePendingAutoRegistrants(PendingRegistrants);
+		DequeuePendingAutoRegistrants(PendingRegistrants);		// @TODO 不知道干嘛，莫非其他地方又会形成链表？
 	}
 }
 
@@ -769,7 +898,7 @@ void UObjectForceRegistration(UObjectBase* Object, bool bCheckForModuleRelease)
 {
 	TMap<UObjectBase*, FPendingRegistrantInfo>& PendingRegistrants = FPendingRegistrantInfo::GetMap();
 
-	FPendingRegistrantInfo* Info = PendingRegistrants.Find(Object);
+	FPendingRegistrantInfo* Info = PendingRegistrants.Find(Object);		// 本例子里，归根到底就是用对应 UClass 找回 类名 包名
 	if (Info)
 	{
 		const TCHAR* PackageName = Info->PackageName;
@@ -787,11 +916,11 @@ void UObjectForceRegistration(UObjectBase* Object, bool bCheckForModuleRelease)
 void UObjectBase::DeferredRegister(UClass *UClassStaticClass,const TCHAR* PackageName,const TCHAR* InName)
 {
 	// Set object properties.
-	UPackage* Package = CreatePackage(PackageName);
+	UPackage* Package = CreatePackage(PackageName);		// @TODO 这里会构造个 UPackage 对象，会调到 NewObject -> AddObject 最终同样会加入到 GUObjectArray 里
 	Package->SetPackageFlags(PKG_CompiledIn);
-	OuterPrivate = Package;
+	OuterPrivate = Package;					// 目前理解就是该类 对应的 UPackage 对象 ，如本例子的 Package("/Script/ReflectionPlugin")
 
-	ClassPrivate = UClassStaticClass;
+	ClassPrivate = UClassStaticClass;		// 目前理解就是该类 对应的 能描述该类的反射类型，如本例子的 ATestActor 就是 UClass::StaticClass()， UPackage("/Script/ReflectionPlugin") 就是 UPackage::StaticClass()
 
 	// Add to the global object table.
 	AddObject(FName(InName), EInternalObjectFlags::None);
@@ -805,6 +934,7 @@ void UObjectBase::DeferredRegister(UClass *UClassStaticClass,const TCHAR* Packag
 
 /**
  * Add a newly created object to the name hash tables and the object array
+ 目前理解就是，把反射信息的对象加进2个容器里，一个是 arr 一个是 hash
  *
  * @param Name name to assign to this uobject
  */
@@ -826,17 +956,246 @@ void UObjectBase::AddObject(FName InName, EInternalObjectFlags InSetInternalFlag
 		InternalFlagsToSet |= EInternalObjectFlags::Native;
 		ObjectFlags &= ~RF_MarkAsNative;
 	}
+	/**
+	怎么理解这个 GUObjectArray 呢
+	该例子是 UClass ，但实际 GUObjectArray 里存的不只是 UClass
+	存的类型是 UObjectBase* ，里面实际会存 UPackage ， UClass ， UFunction ， CDO 等等
+	目前理解成，引擎初始化会load各个模块，模块里又会有很多类，只要该类属于这套反射体系内的（应该就是我们标记了 UClass()），
+	就会创造各种描述该类的对应对象加进 GUObjectArray 里。（例如类用 UClass 描述， 方法用 UFunction 描述，等等）
+	就是 GUObjectArray 里面应该包含了整个引擎需要的反射信息
+	*/
 	GUObjectArray.AllocateUObjectIndex(this);
 	check(InName != NAME_None && InternalIndex >= 0);
 	if (InternalFlagsToSet != EInternalObjectFlags::None)
 	{
 		GUObjectArray.IndexToObject(InternalIndex)->SetFlags(InternalFlagsToSet);
-	
-	}	
+	}
+	/**
+	其实跟上面一样的啦，就是要存起来，不过这里是存在 hash表 里
+	*/
 	HashObject(this);
 	check(IsValidLowLevel());
 }
 
+/**
+ * Add an object to the name hash tables
+ 目前理解就是，把反射信息的对象加进 hash表 里
+ *
+ * @param	Object		Object to add to the hash tables
+ */
+void HashObject(UObjectBase* Object)
+{
+	FName Name = Object->GetFName();
+	if (Name != NAME_None)
+	{
+		int32 Hash = 0;
+
+		FUObjectHashTables& ThreadHash = FUObjectHashTables::Get();
+		FHashTableLock HashLock(ThreadHash);
+
+		Hash = GetObjectHash(Name);
+		ThreadHash.AddToHash(Hash, Object);
+
+		if (PTRINT Outer = (PTRINT)Object->GetOuter())
+		{
+			Hash = GetObjectOuterHash(Name, Outer);
+			checkSlow(!ThreadHash.HashOuter.FindPair(Hash, Object->GetUniqueID()));
+			ThreadHash.HashOuter.Add(Hash, Object->GetUniqueID());
+
+			AddToOuterMap(ThreadHash, Object);
+		}
+
+		AddToClassMap( ThreadHash, Object );
+	}
+}
+
+/**
+ * Load any outstanding compiled in default properties
+ */
+static void UObjectLoadAllCompiledInDefaultProperties()
+{
+	static FName LongEnginePackageName(TEXT("/Script/Engine"));
+
+	FClassDeferredRegistry& Registry = FClassDeferredRegistry::Get();
+
+	if (Registry.HasPendingRegistrations())
+	{
+		TArray<UClass*> NewClasses;
+		TArray<UClass*> NewClassesInCoreUObject;
+		TArray<UClass*> NewClassesInEngine;
+		Registry.DoPendingOuterRegistrations(true, [&NewClasses, &NewClassesInCoreUObject, &NewClassesInEngine](UClass& Class) -> void
+			{
+				if (Class.GetOutermost()->GetFName() == GLongCoreUObjectPackageName)
+				{
+					NewClassesInCoreUObject.Add(&Class);
+				}
+				else if (Class.GetOutermost()->GetFName() == LongEnginePackageName)
+				{
+					NewClassesInEngine.Add(&Class);
+				}
+				else
+				{
+					NewClasses.Add(&Class);
+				}
+			}); 
+		{
+			for (UClass* Class : NewClassesInCoreUObject) // we do these first because we assume these never trigger loads
+			{
+				Class->GetDefaultObject();
+			}
+		}
+		{
+			for (UClass* Class : NewClassesInEngine) // we do these second because we want to bring the engine up before the game
+			{
+				Class->GetDefaultObject();
+			}
+		}
+		{
+			for (UClass* Class : NewClasses)
+			{
+				Class->GetDefaultObject();
+			}
+		}
+	}
+}
+
+/**
+* Invoke the outer registration method for all the registrations and invoke the given function with the resulting object
+*/
+template <typename FuncType>
+void DoPendingOuterRegistrations(bool UpdateCounter, FuncType&& InOnRegistration)
+{
+	int32 Num = Registrations.Num();
+	for (int32 Index = ProcessedRegistrations; Index < Num; ++Index)
+	{
+		/**
+		该处主要就是调用了 Registrations[Index].OuterRegisterFn();
+		该例子中就是对应调 Z_Construct_UClass_ATestActor
+		*/
+		TType* Object = OuterRegister(Registrations[Index]);
+		InOnRegistration(*Object);
+	}
+	if (UpdateCounter)
+	{
+		ProcessedRegistrations = Num;
+	}
+}
+
+void ConstructUClass(UClass*& OutClass, const FClassParams& Params)
+{
+	if (OutClass && (OutClass->ClassFlags & CLASS_Constructed))
+	{
+		return;
+	}
+
+	/**
+	核心处理
+	*/
+	for (UObject* (*const *SingletonFunc)() = Params.DependencySingletonFuncArray, *(*const *SingletonFuncEnd)() = SingletonFunc + Params.NumDependencySingletons; SingletonFunc != SingletonFuncEnd; ++SingletonFunc)
+	{
+		(*SingletonFunc)();
+	}
+
+	UClass* NewClass = Params.ClassNoRegisterFunc();
+	OutClass = NewClass;
+
+	if (NewClass->ClassFlags & CLASS_Constructed)
+	{
+		return;
+	}
+
+	UObjectForceRegistration(NewClass);
+
+	UClass* SuperClass = NewClass->GetSuperClass();
+	if (SuperClass)
+	{
+		NewClass->ClassFlags |= (SuperClass->ClassFlags & CLASS_Inherit);
+	}
+
+	NewClass->ClassFlags |= (EClassFlags)(Params.ClassFlags | CLASS_Constructed);
+	// Make sure the reference token stream is empty since it will be reconstructed later on
+	// This should not apply to intrinsic classes since they emit native references before AssembleReferenceTokenStream is called.
+	if ((NewClass->ClassFlags & CLASS_Intrinsic) != CLASS_Intrinsic)
+	{
+		check((NewClass->ClassFlags & CLASS_TokenStreamAssembled) != CLASS_TokenStreamAssembled);
+		NewClass->ReferenceTokenStream.Empty();
+	}
+	/**
+	核心处理
+	*/
+	NewClass->CreateLinkAndAddChildFunctionsToMap(Params.FunctionLinkArray, Params.NumFunctions);
+
+	/**
+	核心处理
+	*/
+	ConstructFProperties(NewClass, Params.PropertyArray, Params.NumProperties);
+
+	if (Params.ClassConfigNameUTF8)
+	{
+		NewClass->ClassConfigName = FName(UTF8_TO_TCHAR(Params.ClassConfigNameUTF8));
+	}
+
+	NewClass->SetCppTypeInfoStatic(Params.CppClassInfo);
+
+	if (int32 NumImplementedInterfaces = Params.NumImplementedInterfaces)
+	{
+		NewClass->Interfaces.Reserve(NumImplementedInterfaces);
+		for (const FImplementedInterfaceParams* ImplementedInterface = Params.ImplementedInterfaceArray, *ImplementedInterfaceEnd = ImplementedInterface + NumImplementedInterfaces; ImplementedInterface != ImplementedInterfaceEnd; ++ImplementedInterface)
+		{
+			UClass* (*ClassFunc)() = ImplementedInterface->ClassFunc;
+			UClass* InterfaceClass = ClassFunc ? ClassFunc() : nullptr;
+
+			NewClass->Interfaces.Emplace(InterfaceClass, ImplementedInterface->Offset, ImplementedInterface->bImplementedByK2);
+		}
+	}
+
+#if WITH_METADATA
+	AddMetaData(NewClass, Params.MetaDataArray, Params.NumMetaData);
+#endif
+
+	NewClass->StaticLink();
+
+	NewClass->SetSparseClassDataStruct(NewClass->GetSparseClassDataArchetypeStruct());
+}
+
+void UClass::CreateLinkAndAddChildFunctionsToMap(const FClassFunctionLinkInfo* Functions, uint32 NumFunctions)
+{
+	for (; NumFunctions; --NumFunctions, ++Functions)
+	{
+		/**
+		构造 UFunction
+		*/
+		const char* FuncNameUTF8 = Functions->FuncNameUTF8;
+		UFunction*  Func         = Functions->CreateFuncPtr();
+
+		/**
+		Children 是一条 UFunction 的链表，声明在 UStruct 里
+		*/
+		Func->Next = Children;
+		Children = Func;
+
+		/**
+		本质就是把 Func 存在一个叫 FuncMap 的 map 里，key 是 FuncNameUTF8 ， value 是 Func
+		*/
+		AddFunctionToFunctionMap(Func, FName(UTF8_TO_TCHAR(FuncNameUTF8)));
+	}
+}
+
+void ConstructFProperties(UObject* Outer, const FPropertyParamsBase* const* PropertyArray, int32 NumProperties)
+{
+	// Move pointer to the end, because we'll iterate backwards over the properties
+	PropertyArray += NumProperties;
+	while (NumProperties)
+	{
+		/**
+		构造 FProperty
+		这个 Outer 实际可能会是 UClass ， UStruct 或者 UFunction
+		本例子是 UClass ， 最终会调到 AddCppProperty 方法，把构造出来的 FProperty 对象存在一个叫 ChildProperties 的链表中
+		ChildProperties 声明在 UStruct 里
+		*/
+		ConstructFProperty(Outer, PropertyArray, NumProperties);
+	}
+}
 
 
 

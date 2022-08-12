@@ -10,7 +10,6 @@ ATestActor::ATestActor()
 	PrimaryActorTick.bCanEverTick = true;
 
 	TestComp = CreateDefaultSubobject<UTestComponent>(TEXT("TestComp"));
-	TestCompBp = CreateDefaultSubobject<UTestComponent>(TEXT("TestCompBp"));
 }
 
 // Called when the game starts or when spawned
@@ -27,22 +26,19 @@ void ATestActor::Tick(float DeltaTime)
 
 }
 
-int ATestActor::TestUFuncOnly(const FString& InStr)
+int32 ATestActor::TestUFuncOnly(const int32& A, const int32& B)
 {
-	UE_LOG(LogTemp, Warning, TEXT("=== ATestActor::TestUFuncOnly === %s"), *InStr)
-	return 0;
+	UE_LOG(LogTemp, Warning, TEXT("=== ATestActor::TestUFuncOnly ==="))
+	return A + B;
 }
 
-int ATestActor::TestUFuncBpCallable(const FString& InStr)
+int32 ATestActor::TestUFuncBpCallable(const FString& InStr)
 {
-	FString tStr = TEXT("TestUFuncBpCallable call TestUFuncOnly");
-	this->ProcessEvent(this->FindFunction(TEXT("TestUFuncOnly")), &tStr);
-
 	UE_LOG(LogTemp, Warning, TEXT("=== ATestActor::TestUFuncBpCallable === %s"), *InStr)
 	return 0;
 }
 
-int ATestActor::TestUFuncBpNative_Implementation(const FString& InStr)
+int32 ATestActor::TestUFuncBpNative_Implementation(const FString& InStr)
 {
 	UE_LOG(LogTemp, Warning, TEXT("=== ATestActor::TestUFuncBpNative_Implementation === %s"), *InStr)
 	return 0;
