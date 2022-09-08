@@ -128,7 +128,12 @@ void ATestActor::StaticRegisterNativesATestActor()
     FNativeFunctionRegistrar::RegisterFunctions(Class, Funcs, UE_ARRAY_COUNT(Funcs));
 }
 给 ATestActor 声明了个静态方法，该方法主要就是注册一些在 FID_Reflection_Plugins_ReflectionPlugin_Source_ReflectionPlugin_Public_TestActor_h_13_RPC_WRAPPERS_NO_PURE_DECLS 宏里声明的方法，注册在 UClass 里的 NativeFunctionLookupTable 属性，是个 TArray 类型。
-NativeFunctionLookupTable   // @TODO 该属性的引用大概是什么情况
+目前的理解是，只要在CPP编码时，在类里用 UFUNCTION 标记的方法，生成的反射代码里也对应在类里定义了一个 execXXX 的静态 thunk 方法，而且参数都是规定好的，正因为参数都是规定好，所以 UE 能处理所有的这些函数调用。而这些静态 thunk 方法最后会注册在 UClass 的 NativeFunctionLookupTable 属性里。最后在完整初始化完该类的 UClass 时，会构造这个类的所有 UFunction ，而在构造 UFunction 时，会执行 Bind 的方法，只要时 Native 标记的方法，就会在 NativeFunctionLookupTable 里找打对应方法绑定。
+具体看看 UFunction::Bind() 方法吧，里面有段这样的注释：
+// if this isn't a native function, or this function belongs to a native interface class (which has no C++ version), 
+// use ProcessInternal (call into script VM only) as the function pointer for this function
+
+
 
 解析 friend struct Z_Construct_UClass_ATestActor_Statics;
 其实就是 ATestActor类 friend 了叫 Z_Construct_UClass_ATestActor_Statics 的结构。
@@ -454,8 +459,8 @@ struct FClassReloadVersionInfo
 };
 理解为：
 struct FClassRegistrationInfo = {
-	UClass* InnerSingleton = nullptr;					// 最终存着该类对应的 UClass
-	UClass* OuterSingleton = nullptr;					// @TODO
+	UClass* InnerSingleton = nullptr;					// 最终存着该类对应的 UClass ， 在执行 GetPrivateStaticClass 赋值进去的
+	UClass* OuterSingleton = nullptr;					// 最终存着该类对应的 UClass ， 在执行 ConstructUClass 赋值进去的。。目前不太理解为什么要有2个一样的东西
 	FClassReloadVersionInfo ReloadVersionInfo;			// 应该是编辑器热更 C++ 用的吧
 }
 
@@ -1199,3 +1204,21 @@ void ConstructFProperties(UObject* Outer, const FPropertyParamsBase* const* Prop
 
 
 
+
+
+
+
+TestUFuncOnly 0x00420401
+0000010000100000010000000001
+
+TestUFuncBpCallable 0x04020401
+0100000000100000010000000001
+
+TestUFuncBpImpl 0x0C020800
+1100000000100000100000000000
+
+TestUFuncBpNative 0x0C020C00
+1100000000100000110000000000
+
+FUNC_Native
+0000000000000000010000000000
